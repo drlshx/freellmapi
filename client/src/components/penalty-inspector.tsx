@@ -90,7 +90,8 @@ export function PenaltyInspector() {
   })
 
   const rows = data?.rows ?? []
-  if (rows.length === 0) return null
+  const hasRows = rows.length > 0
+
 
   function toggle() {
     setCollapsed(prev => {
@@ -127,6 +128,7 @@ export function PenaltyInspector() {
       </button>
 
       {!collapsed && (
+        hasRows ? (
       <div className="divide-y">
         {rows.map(row => (
           <div key={`${row.platform}:${row.modelId}:${row.modelDbId ?? 'missing'}`} className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(14rem,1.2fr)_minmax(10rem,0.8fr)_minmax(14rem,1.3fr)]">
@@ -198,6 +200,11 @@ export function PenaltyInspector() {
           </div>
         ))}
       </div>
+        ) : (
+          <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+            <p>All clear - no router pressure</p>
+          </div>
+        )
       )}
     </section>
   )

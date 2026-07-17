@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Express router handles model fallback configuration and token budget reporting.
  * It integrates named profiles dynamically into the fallback routing logic and aggregates
  * monthly token consumption and rate limits (RPM/RPD/TPM/TPD) across configured models.
@@ -23,8 +23,14 @@ fallbackRouter.get('/routing', (_req: Request, res: Response) => {
   res.json(getRoutingScores());
 });
 
-fallbackRouter.get('/penalty-inspector', (_req: Request, res: Response) => {
-  res.json(getPenaltyInspector());
+fallbackRouter.get('/penalty-inspector', async (_req: Request, res: Response) => {
+  try {
+    const inspectorData = await getPenaltyInspector();
+    res.json(inspectorData);
+  } catch (err) {
+    console.error('penalty-inspector error:', err);
+    res.status(500).json({ error: { message: 'Failed to fetch penalty inspector data' } });
+  }
 });
 
 const routingSchema = z.object({
