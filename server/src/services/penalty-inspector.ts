@@ -4,6 +4,7 @@ import { rateLimitFactor } from './scoring.js';
 
 const INSPECTOR_LOOKBACK_MINUTES = 30;
 const MAX_ERRORS_PER_MODEL = 5;
+const AUTO_DISABLE_THRESHOLD = 3;
 
 export type InspectorReason = 'penalty' | 'cooldown' | 'recent_errors';
 
@@ -91,7 +92,38 @@ function addReason(row: InspectorRow, reason: InspectorReason): void {
   if (!row.reasons.includes(reason)) row.reasons.push(reason);
 }
 
-export function getPenaltyInspector(): PenaltyInspectorSnapshot {
+// Auto-disable models with medium+ penalty (value >= AUTO_DISABLE_THRESHOLD)
+async function autoDisableHighPenaltyModels(helperRows: Map<string, InspectorRow>): Promise<number> {
+  const helperDb = getDb();
+  let helperDisabledCount = 0;
+
+  for (const row of helperRows.values()) {
+    if (!row.enabled || row.penalty.value < AUTO_DISABLE_THRESHOLD) continue;
+    
+    const model = helperDb.prepare('SELECT id, platform, model_id FROM models WHERE id = ?')
+      .get(row.modelDbId) as { id: number; platform: string; model_id: string } | undefined;
+    if (!model) continue;
+    
+    const isDisabled = helperDb.prepare('SELECT 1 FROM models WHERE id = ? AND enabled = 0').get(model.id);
+    if (isDisabled) continue;
+    
+    const result = helperDb.prepare(
+      'UPDATE models SET enabled = 0, updated_at = datetime("now"), auto_disabled_at = datetime("now") WHERE id = ?'
+    ).run(model.id);
+    
+    if (result.changes > 0) {
+      helperDisabledCount++;
+      console.log(
+        `Auto-disabled model ${model.platform}/${model.model_id} (ID: ${model.id}) ` +
+        `due to penalty value of ${row.penalty.value}`
+      );
+    }
+  }
+  
+  return helperDisabledCount;
+}
+
+export async function getPenaltyInspector(): Promise<PenaltyInspectorSnapshot> {
   const db = getDb();
   const now = Date.now();
   const rows = new Map<string, InspectorRow>();
@@ -227,6 +259,11 @@ export function getPenaltyInspector(): PenaltyInspectorSnapshot {
       });
     }
     addReason(row, 'recent_errors');
+  }
+
+  const count = await autoDisableHighPenaltyModels(rows);
+  if (count > 0) {
+    console.log(`Auto-disabled ${count} models due to high penalty`);
   }
 
   const ordered = [...rows.values()].sort((a, b) =>
